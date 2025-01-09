@@ -1,0 +1,9 @@
+version: 2
+updates:
+  - package-ecosystem: "pip" # Dependency manager (e.g., npm, maven, pip)
+    directory: "/"           # Directory with the dependency file
+    schedule:
+      interval: "weekly"     # Frequency of updates (daily, weekly, monthly)
+    ignore:
+      - dependency-name: "some-library"
+        versions: ["1.0.0"]

@@ -1,0 +1,44 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  SONAR_PROJECT_KEY: "my-project-key"
+  SONAR_HOST_URL: "http://<your-sonarqube-server>"
+  SONAR_AUTH_TOKEN: "<your-sonarqube-token>"
+
+stages:
+- stage: Build
+  displayName: Build and Analyze
+  jobs:
+  - job: BuildAndScan
+    displayName: Build and Run SonarQube Analysis
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.x'
+
+    - script: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+      displayName: Install Dependencies
+
+    - task: SonarQubePrepare@5
+      inputs:
+        SonarQube: 'SonarQubeServiceEndpoint' # Service connection to SonarQube
+        scannerMode: 'CLI'
+        configMode: 'manual'
+        cliProjectKey: $(SONAR_PROJECT_KEY)
+        cliSources: '.'
+        extraProperties: |
+          sonar.python.version=3
+          sonar.exclusions=**/tests/**
+
+    - task: SonarQubeAnalyze@5
+      displayName: Run SonarQube Analysis
+
+    - task: SonarQubePublish@5
+      inputs:
+        pollingTimeoutSec: '300'
