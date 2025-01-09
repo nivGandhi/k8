@@ -1,0 +1,151 @@
+# Investigating and Resolving AKS Pod Communication Issues with External Services
+
+## **Issue Description**
+Pods in an Azure Kubernetes Service (AKS) cluster were unable to communicate with external services. This issue manifested as:
+
+- **DNS resolution failures** when pods attempted to resolve external domains (e.g., `google.com`).
+- **Connection timeouts** when pods tried to access external IP addresses.
+- Applications experiencing failures when interacting with third-party APIs or external databases.
+
+---
+
+## **Root Cause Analysis**
+
+### **1. Outbound Connectivity Issue**
+- AKS uses a Network Address Translation (NAT) gateway, Azure Load Balancer, or Azure Firewall for outbound internet connectivity.
+- The investigation revealed that the cluster’s outbound configuration was incorrect, causing outbound traffic to fail.
+
+### **2. Network Security Group (NSG) Misconfiguration**
+- The NSG attached to the AKS subnet had restrictive rules that blocked outbound traffic to the internet.
+
+### **3. DNS Configuration Issue**
+- CoreDNS pods were misconfigured, leading to DNS resolution failures within the cluster.
+
+---
+
+## **Investigation Steps**
+
+### **Step 1: Check Pod Connectivity**
+Ran a connectivity test from a pod:
+```bash
+kubectl run connectivity-test --image=busybox --restart=Never --command -- sleep 3600
+kubectl exec connectivity-test -- wget -qO- http://google.com
+```
+**Result**: Connection timed out.
+
+### **Step 2: Verify AKS Cluster Outbound Configuration**
+Checked the cluster’s network profile:
+```bash
+az aks show --resource-group <resource-group> --name <cluster-name> --query "networkProfile"
+```
+**Result**: The cluster was using a user-defined route (UDR) without a NAT gateway or appropriate outbound configuration.
+
+### **Step 3: Inspect NSG Rules**
+Inspected NSG rules for the AKS subnet:
+1. Go to **Azure portal > Virtual Networks > Subnets**.
+2. Checked the associated NSG rules.
+
+**Result**: Outbound traffic to `Internet` was blocked.
+
+### **Step 4: Check CoreDNS Logs**
+Verified logs from CoreDNS pods:
+```bash
+kubectl logs -n kube-system <coredns-pod-name>
+```
+**Result**: CoreDNS was unable to resolve external domains, indicating DNS configuration issues.
+
+---
+
+## **Resolution Steps**
+
+### **Step 1: Fix Outbound Connectivity**
+1. **Switch to Standard Load Balancer (if Basic is used):**
+   Upgraded the cluster to use the Standard SKU load balancer for enhanced outbound connectivity:
+   ```bash
+   az aks update --resource-group <resource-group> --name <cluster-name> --load-balancer-sku standard
+   ```
+
+2. **Add NAT Gateway (Optional):**
+   Configured a NAT gateway for predictable outbound IPs:
+   ```bash
+   az network nat gateway create --resource-group <resource-group> --name <nat-gateway> --public-ip-addresses <public-ip-name>
+   az network vnet subnet update --resource-group <resource-group> --vnet-name <vnet-name> --name <subnet-name> --nat-gateway <nat-gateway>
+   ```
+
+### **Step 2: Update NSG Rules**
+Added an outbound rule to allow internet traffic:
+1. Go to **Azure portal > Network Security Groups**.
+2. Add a rule:
+   - **Direction**: Outbound
+   - **Destination**: Internet
+   - **Action**: Allow
+   - **Priority**: 100
+
+### **Step 3: Fix CoreDNS Configuration**
+1. Verified the CoreDNS ConfigMap:
+   ```bash
+   kubectl -n kube-system edit configmap coredns
+   ```
+2. Ensured the following block was present:
+   ```yaml
+   forward . /etc/resolv.conf
+   ```
+3. Restarted CoreDNS pods:
+   ```bash
+   kubectl rollout restart deployment coredns -n kube-system
+   ```
+
+### **Step 4: Test Connectivity**
+Repeated the connectivity test:
+```bash
+kubectl exec connectivity-test -- wget -qO- http://google.com
+```
+**Result**: Success. Pods could now access external services.
+
+---
+
+## **Follow-Up Actions**
+1. **Monitoring**:
+   - Enabled Azure Monitor for AKS to track networking metrics and logs.
+   ```bash
+   az aks enable-addons --addons monitoring --resource-group <resource-group> --name <cluster-name>
+   ```
+
+2. **Document Configuration**:
+   - Documented NSG rules and outbound settings for future reference.
+
+3. **Automated Testing**:
+   - Added connectivity tests as part of CI/CD pipelines to detect similar issues early.
+
+---
+
+## **Logs**
+
+### **1. `kubectl describe` Output**
+```plaintext
+Name:         connectivity-test
+Namespace:    default
+Node:         aks-nodepool1-12345678-vmss000000/10.240.0.4
+Start Time:   Wed, 08 Jan 2025 10:30:00 +0000
+Labels:       run=connectivity-test
+Status:       Running
+IP:           10.244.1.5
+Containers:
+  connectivity-test:
+    Container ID:   docker://abcdef123456
+    Image:          busybox
+    State:          Running
+    Ready:          True
+...
+```
+
+### **2. CoreDNS Logs**
+```plaintext
+[ERROR] plugin/errors: 2 google.com. AAAA: unreachable backend
+[ERROR] plugin/errors: 2 google.com. A: unreachable backend
+```
+
+---
+
+With these steps, the AKS pods were able to communicate with external services successfully.
+

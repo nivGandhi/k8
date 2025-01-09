@@ -1,0 +1,161 @@
+trigger:
+  batch: true
+  branches:
+    include:
+      - devl
+      - main
+  paths:
+    exclude:
+      - app/deployment
+      - app/databases
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  dockerRegistryServiceConnection: 'AZACR'
+  imageName: 'sampleapp-devl'
+  aksClusterName: 'aks-devl'
+  aksResourceGroup: 'sampleapp-rg'
+  namespace: 'devl'
+
+stages:
+- stage: BuildService
+  displayName: Build Stage
+  jobs:
+  - job: Build
+    displayName: Build Job
+    steps:
+    - task: UseDotNet@2
+      displayName: Install .NET SDK
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+        installationPath: $(Agent.ToolsDirectory)/dotnet
+
+    - script: dotnet restore
+      displayName: Restore Dependencies
+
+    - script: dotnet build --configuration $(buildConfiguration)
+      displayName: Build Solution
+
+    - script: dotnet test --configuration $(buildConfiguration) --no-build --verbosity normal --collect:"Code Coverage"
+      displayName: Run Unit Tests with Code Coverage
+      
+    - task: PublishCodeCoverageResults@1
+      displayName: Publish Code Coverage Results
+      inputs:
+        codeCoverageTool: 'Cobertura'  # Set Cobertura as the code coverage tool
+        summaryFileLocation: '**/TestResults/*.xml'  # Path to Cobertura XML report
+        reportDirectory: '$(Build.ArtifactStagingDirectory)/CodeCoverageReports'  # Directory for the report
+
+    - task: PublishPipelineArtifact@1
+      displayName: Publish Build Artifacts
+      inputs:
+        targetPath: '$(System.DefaultWorkingDirectory)/build'
+        artifact: 'drop'
+
+- stage: Docker
+  displayName: Push the Docker Image
+  dependsOn: BuildService
+  jobs:
+  - job: DockerBuildAndPush
+    displayName: Build and Push Docker Image
+    steps:
+    - task: Docker@2
+      displayName: Build and Push Docker Image
+      inputs:
+        containerRegistry: $(dockerRegistryServiceConnection)
+        repository: $(imageName)
+        command: buildAndPush
+        Dockerfile: sampleapp/Dockerfile
+        tags: |
+          $(Build.BuildId)
+          latest
+
+- stage: Deploy_Staging
+  displayName: Deploy to Staging
+  dependsOn: Docker
+  variables:
+    environment: 'staging'
+  jobs:
+  - job: DeployStaging
+    displayName: Deploy to Staging
+    steps:
+    - task: Kubernetes@1
+      displayName: Deploy to AKS (Staging)
+      inputs:
+        connectionType: 'Azure Resource Manager'
+        azureSubscription: $(dockerRegistryServiceConnection)
+        azureResourceGroup: $(aksResourceGroup)
+        kubernetesCluster: $(aksClusterName)
+        namespace: $(namespace)
+        command: apply
+        useConfigurationFile: true
+        configuration: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: sampleapp
+            namespace: $(namespace)
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: sampleapp
+            template:
+              metadata:
+                labels:
+                  app: sampleapp
+              spec:
+                containers:
+                - name: sampleapp
+                  image: $(imageName):$(Build.BuildId)
+                  ports:
+                  - containerPort: 80
+
+- stage: Deploy_Production
+  displayName: Deploy to Production
+  dependsOn: Deploy_Staging
+  variables:
+    environment: 'production'
+  jobs:
+  - job: DeployProduction
+    displayName: Deploy to Production
+    steps:
+    - task: Kubernetes@1
+      displayName: Deploy to AKS (Production)
+      inputs:
+        connectionType: 'Azure Resource Manager'
+        azureSubscription: $(dockerRegistryServiceConnection)
+        azureResourceGroup: $(aksResourceGroup)
+        kubernetesCluster: $(aksClusterName)
+        namespace: $(namespace)
+        command: apply
+        useConfigurationFile: true
+        configuration: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: sampleapp
+            namespace: $(namespace)
+          spec:
+            replicas: 3 # Increase replicas for production
+            selector:
+              matchLabels:
+                app: sampleapp
+            template:
+              metadata:
+                labels:
+                  app: sampleapp
+              spec:
+                containers:
+                - name: sampleapp
+                  image: $(imageName):$(Build.BuildId)
+                  ports:
+                  - containerPort: 80
+  preDeployApprovals:
+    - approvals:
+        - reviewer:
+            displayName: 'Team Lead' # Add reviewer details here

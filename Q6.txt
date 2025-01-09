@@ -1,0 +1,41 @@
+trigger:
+- main
+
+variables:
+  - name: resourceGroupName
+    value: "myResourceGroup"
+  - name: aksClusterName
+    value: "myAKSCluster"
+
+stages:
+- stage: Deploy
+  displayName: Deploy to AKS
+  jobs:
+  - job: RetrieveAndDeploy
+    displayName: Retrieve secrets and deploy
+    steps:
+    - task: AzureKeyVault@2
+      displayName: Retrieve secrets from Azure Key Vault
+      inputs:
+        azureSubscription: '<Azure Service Connection>'
+        KeyVaultName: '<Your-KeyVault-Name>'
+        SecretsFilter: '*'
+        RunAsPreJob: true
+
+    - script: |
+        echo "Retrieved secret: $(mySecretName)"
+        kubectl apply -f deployment.yaml --namespace=$(namespace)
+      displayName: Deploy to Kubernetes
+      env:
+        KUBE_CONFIG: $(KUBE_CONFIG)
+        SECRET_ENV_VAR: $(mySecretName)
+
+
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-app-secret
+type: Opaque
+data:
+  connectionString: ${SECRET_ENV_VAR}

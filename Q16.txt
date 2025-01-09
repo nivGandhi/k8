@@ -1,0 +1,160 @@
+# Cost Optimization Recommendations with Azure Advisor
+
+## **Overview**
+Azure Advisor provides actionable recommendations to optimize costs, improve performance, and enhance security. Below are the cost-saving opportunities identified for the given resources along with proposed optimizations.
+
+---
+
+## **Cost-Saving Opportunities**
+
+### **1. Right-Size Virtual Machines (VMs)**
+
+#### **Issue**:
+Several VMs are underutilized, running at less than 20% CPU utilization and memory usage over the past 30 days.
+
+#### **Recommendation**:
+- Use Azure Advisor's right-sizing recommendations to move to smaller VM sizes or burstable instances.
+- For test and development workloads, consider using **B-series VMs**.
+
+#### **Proposed Action**:
+1. Identify affected VMs:
+   ```bash
+   az advisor recommendation list --category Cost --query "[?impactedField=='Virtual Machines']"
+   ```
+2. Resize VMs:
+   ```bash
+   az vm resize --resource-group <resource-group> --name <vm-name> --size <new-size>
+   ```
+
+#### **Estimated Savings**:
+Up to **30%** of current compute costs for underutilized VMs.
+
+---
+
+### **2. Use Reserved Instances (RIs)**
+
+#### **Issue**:
+On-demand VMs are used for workloads that have predictable, steady usage patterns.
+
+#### **Recommendation**:
+- Purchase 1-year or 3-year Reserved Instances (RIs) for long-running workloads.
+- Use Azure Cost Management to analyze RI savings potential.
+
+#### **Proposed Action**:
+1. Identify eligible resources with steady usage.
+2. Purchase RIs:
+   ```bash
+   az consumption reservation purchase --reservation-order-id <id> --sku <sku-name> --quantity <quantity>
+   ```
+
+#### **Estimated Savings**:
+Save up to **72%** compared to pay-as-you-go rates.
+
+---
+
+### **3. Optimize Storage Costs**
+
+#### **Issue**:
+Premium and standard storage accounts have unused capacity or are not tiered optimally.
+
+#### **Recommendation**:
+- Move infrequently accessed data to **Cool** or **Archive** tiers.
+- Consolidate underutilized storage accounts.
+
+#### **Proposed Action**:
+1. Analyze storage usage:
+   ```bash
+   az storage account show-usage --resource-group <resource-group>
+   ```
+2. Tier infrequent data:
+   ```bash
+   az storage blob set-tier --account-name <account-name> --container-name <container> --name <blob-name> --tier Cool
+   ```
+
+#### **Estimated Savings**:
+Up to **50%** reduction in storage costs for archival data.
+
+---
+
+### **4. Leverage Autoscaling for App Services**
+
+#### **Issue**:
+Web applications are deployed with constant instance counts, leading to over-provisioning during off-peak hours.
+
+#### **Recommendation**:
+- Enable autoscaling for Azure App Service plans to adjust instances based on traffic.
+
+#### **Proposed Action**:
+1. Set up autoscale rules:
+   ```bash
+   az monitor autoscale create --resource-group <resource-group> --resource <app-service-name> --min-count 1 --max-count 5 --count 1
+   ```
+2. Define autoscale conditions for CPU/memory usage.
+
+#### **Estimated Savings**:
+Reduce costs by **20-40%** during low-traffic periods.
+
+---
+
+### **5. Remove Unused Resources**
+
+#### **Issue**:
+Unused resources, such as idle VMs, unattached disks, and unused public IPs, are incurring costs.
+
+#### **Recommendation**:
+- Identify and delete unused resources.
+- Schedule periodic reviews using Azure Resource Graph or Azure Cost Management.
+
+#### **Proposed Action**:
+1. Identify unused resources:
+   ```bash
+   az resource list --query "[?tags=='unused']"
+   ```
+2. Delete resources:
+   ```bash
+   az resource delete --ids <resource-id>
+   ```
+
+#### **Estimated Savings**:
+Immediate cost reduction by eliminating unnecessary resources.
+
+---
+
+### **6. Utilize Azure Hybrid Benefit**
+
+#### **Issue**:
+Windows Server and SQL Server VMs are running without leveraging existing on-premises licenses.
+
+#### **Recommendation**:
+- Enable Azure Hybrid Benefit for eligible VMs to use existing licenses.
+
+#### **Proposed Action**:
+1. Check eligibility and enable the benefit:
+   ```bash
+   az vm update --resource-group <resource-group> --name <vm-name> --license-type Windows_Server
+   ```
+
+#### **Estimated Savings**:
+Save up to **40%** on licensing costs.
+
+---
+
+## **Summary of Recommendations and Savings**
+| **Optimization Area**      | **Estimated Savings** |
+|----------------------------|-----------------------|
+| Right-Size VMs             | Up to 30%            |
+| Use Reserved Instances     | Up to 72%            |
+| Optimize Storage Costs     | Up to 50%            |
+| Autoscale App Services     | 20-40%               |
+| Remove Unused Resources    | Immediate savings    |
+| Azure Hybrid Benefit       | Up to 40%            |
+
+---
+
+## **Next Steps**
+1. Implement these recommendations in a staged approach, starting with the highest impact changes.
+2. Regularly review Azure Advisor recommendations for continuous cost optimization.
+3. Monitor cost trends using Azure Cost Management.
+
+By following these recommendations, significant cost savings can be achieved while ensuring optimal resource utilization.
+
