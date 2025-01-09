@@ -1,0 +1,22 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0.404-noble-amd64 as build-env
+
+WORKDIR /app
+
+COPY sample-app/*.csproj ./sample-app/
+
+RUN dotnet restore 
+
+COPY sample-app/. ./sample-app/
+
+WORKDIR /app/sample-app
+
+RUN dotnet publish -c Release -o out
+
+#Build the run time image
+FROM mcr.microsoft.com/dotnet/aspnet:8.0.11-noble-chiseled-extra
+
+WORKDIR /app/sample-app
+
+COPY --from=build-env /app/sample-app/out ./
+
+ENTRYPOINT ["dotnet", "sample-app.dll"]
